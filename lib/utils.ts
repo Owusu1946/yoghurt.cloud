@@ -26,8 +26,10 @@ export const convertFileSize = (sizeInBytes: number, digits?: number) => {
 
 export const calculatePercentage = (sizeInBytes: number) => {
   const totalSizeInBytes = 600 * 1024 * 1024 * 1024; // 600GB in bytes
+  if (sizeInBytes <= 0) return 0;
   const percentage = (sizeInBytes / totalSizeInBytes) * 100;
-  return Number(percentage.toFixed(2));
+  const rounded = Number(percentage.toFixed(2));
+  return rounded === 0 ? 0.01 : rounded;
 };
 
 export const getFileType = (fileName: string) => {

@@ -20,15 +20,8 @@ const handleError = (error: unknown, message: string) => {
   throw error;
 };
 
-// Temporary guard while migrating away from Appwrite
-const appwriteEnabled = () =>
-  !!(
-    process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT &&
-    process.env.NEXT_PUBLIC_APPWRITE_PROJECT &&
-    process.env.NEXT_PUBLIC_APPWRITE_DATABASE &&
-    process.env.NEXT_PUBLIC_APPWRITE_FILES_COLLECTION &&
-    process.env.NEXT_PUBLIC_APPWRITE_BUCKET
-  );
+// Explicit opt-in flag for Appwrite paths; defaults to Mongo when unset
+const appwriteEnabled = () => process.env.NEXT_PUBLIC_USE_APPWRITE === "true";
 
 export const uploadFile = async ({
   file,

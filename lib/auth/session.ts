@@ -21,7 +21,7 @@ export const createSessionToken = async (payload: { sub: string }) => {
 export const setSessionCookie = async (token: string) => {
   (await cookies()).set(COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,

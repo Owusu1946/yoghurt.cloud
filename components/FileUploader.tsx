@@ -10,7 +10,7 @@ import Thumbnail from "@/components/Thumbnail";
 import { MAX_FILE_SIZE } from "@/constants";
 import { useToast } from "@/hooks/use-toast";
 import { uploadFile } from "@/lib/actions/file.actions";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 interface Props {
   ownerId: string;
@@ -20,6 +20,7 @@ interface Props {
 
 const FileUploader = ({ ownerId, accountId, className }: Props) => {
   const path = usePathname();
+  const router = useRouter();
   const { toast } = useToast();
   const [files, setFiles] = useState<{ file: File; progress: number }[]>([]);
 
@@ -27,7 +28,7 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
     file: File,
     fields: { ownerId: string; accountId: string; path: string },
   ) => {
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const form = new FormData();
       form.append("file", file);
       form.append("ownerId", fields.ownerId);
@@ -49,7 +50,12 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
       xhr.onreadystatechange = () => {
         if (xhr.readyState === XMLHttpRequest.DONE) {
           if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(true);
+            try {
+              const json = JSON.parse(xhr.responseText || "{}");
+              resolve(json);
+            } catch {
+              resolve(true);
+            }
           } else {
             reject(new Error("Upload failed"));
           }
@@ -82,10 +88,18 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
         }
 
         try {
-          await uploadWithProgress(file, { ownerId, accountId, path });
+          const uploaded: any = await uploadWithProgress(file, { ownerId, accountId, path });
           setFiles((prevFiles) =>
             prevFiles.filter((f) => f.file.name !== file.name),
           );
+          // Pre-warm the file URL so it renders instantly after refresh
+          if (uploaded && uploaded.url) {
+            try {
+              await fetch(uploaded.url, { cache: "no-store" });
+            } catch {}
+          }
+          // Re-fetch server data so the new file shows instantly
+          router.refresh();
         } catch (e) {
           toast({
             description: (

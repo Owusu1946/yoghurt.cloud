@@ -30,6 +30,8 @@ const chartConfig = {
 
 export const Chart = ({ used = 0 }: { used: number }) => {
   const chartData = [{ storage: "used", 10: used, fill: "white" }];
+  const rawPct = calculatePercentage(used);
+  const pct = used > 0 ? Math.max(rawPct, 0.01) : 0;
 
   return (
     <Card className="chart">
@@ -38,7 +40,7 @@ export const Chart = ({ used = 0 }: { used: number }) => {
           <RadialBarChart
             data={chartData}
             startAngle={90}
-            endAngle={Number(calculatePercentage(used)) + 90}
+            endAngle={Number(pct) + 90}
             innerRadius={80}
             outerRadius={110}
           >
@@ -66,10 +68,8 @@ export const Chart = ({ used = 0 }: { used: number }) => {
                           y={viewBox.cy}
                           className="chart-total-percentage"
                         >
-                          {used && calculatePercentage(used)
-                            ? calculatePercentage(used)
-                                .toString()
-                                .replace(/^0+/, "")
+                          {used && pct
+                            ? pct.toFixed(2).replace(/^0+/, "")
                             : "0"}
                           %
                         </tspan>
