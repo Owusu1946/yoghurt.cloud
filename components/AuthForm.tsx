@@ -18,24 +18,24 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { createAccount, signInUser } from "@/lib/actions/user.actions";
-import OtpModal from "@/components/OTPModal";
+import { useRouter } from "next/navigation";
 
 type FormType = "sign-in" | "sign-up";
 
-const authFormSchema = (formType: FormType) => {
-  return z.object({
+const authFormSchema = (formType: FormType) =>
+  z.object({
     email: z.string().email(),
+    password: z.string().min(6, "Password must be at least 6 characters"),
     fullName:
       formType === "sign-up"
         ? z.string().min(2).max(50)
         : z.string().optional(),
   });
-};
 
 const AuthForm = ({ type }: { type: FormType }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [accountId, setAccountId] = useState(null);
+  const router = useRouter();
 
   const formSchema = authFormSchema(type);
   const form = useForm<z.infer<typeof formSchema>>({
@@ -43,6 +43,7 @@ const AuthForm = ({ type }: { type: FormType }) => {
     defaultValues: {
       fullName: "",
       email: "",
+      password: "",
     },
   });
 
@@ -51,17 +52,22 @@ const AuthForm = ({ type }: { type: FormType }) => {
     setErrorMessage("");
 
     try {
-      const user =
+      const result =
         type === "sign-up"
           ? await createAccount({
               fullName: values.fullName || "",
               email: values.email,
+              password: values.password,
             })
-          : await signInUser({ email: values.email });
+          : await signInUser({ email: values.email, password: values.password });
 
-      setAccountId(user.accountId);
+      if (result?.error) {
+        setErrorMessage(result.error);
+      } else {
+        router.push("/");
+      }
     } catch {
-      setErrorMessage("Failed to create account. Please try again.");
+      setErrorMessage("Something went wrong. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -120,6 +126,29 @@ const AuthForm = ({ type }: { type: FormType }) => {
             )}
           />
 
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <div className="shad-form-item">
+                  <FormLabel className="shad-form-label">Password</FormLabel>
+
+                  <FormControl>
+                    <Input
+                      type="password"
+                      placeholder="Enter your password"
+                      className="shad-input"
+                      {...field}
+                    />
+                  </FormControl>
+                </div>
+
+                <FormMessage className="shad-form-message" />
+              </FormItem>
+            )}
+          />
+
           <Button
             type="submit"
             className="form-submit-button"
@@ -156,10 +185,6 @@ const AuthForm = ({ type }: { type: FormType }) => {
           </div>
         </form>
       </Form>
-
-      {accountId && (
-        <OtpModal email={form.getValues("email")} accountId={accountId} />
-      )}
     </>
   );
 };

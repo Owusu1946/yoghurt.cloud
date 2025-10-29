@@ -21,16 +21,53 @@ interface Props {
 const FileUploader = ({ ownerId, accountId, className }: Props) => {
   const path = usePathname();
   const { toast } = useToast();
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<{ file: File; progress: number }[]>([]);
+
+  const uploadWithProgress = (
+    file: File,
+    fields: { ownerId: string; accountId: string; path: string },
+  ) => {
+    return new Promise((resolve, reject) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("ownerId", fields.ownerId);
+      form.append("accountId", fields.accountId);
+      form.append("path", fields.path);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/upload");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          setFiles((prev) =>
+            prev.map((it) =>
+              it.file.name === file.name ? { ...it, progress: percent } : it,
+            ),
+          );
+        }
+      };
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(true);
+          } else {
+            reject(new Error("Upload failed"));
+          }
+        }
+      };
+      xhr.onerror = () => reject(new Error("Network error"));
+      xhr.send(form);
+    });
+  };
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
-      setFiles(acceptedFiles);
+      setFiles(acceptedFiles.map((f) => ({ file: f, progress: 0 })));
 
       const uploadPromises = acceptedFiles.map(async (file) => {
         if (file.size > MAX_FILE_SIZE) {
           setFiles((prevFiles) =>
-            prevFiles.filter((f) => f.name !== file.name),
+            prevFiles.filter((f) => f.file.name !== file.name),
           );
 
           return toast({
@@ -44,15 +81,24 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
           });
         }
 
-        return uploadFile({ file, ownerId, accountId, path }).then(
-          (uploadedFile) => {
-            if (uploadedFile) {
-              setFiles((prevFiles) =>
-                prevFiles.filter((f) => f.name !== file.name),
-              );
-            }
-          },
-        );
+        try {
+          await uploadWithProgress(file, { ownerId, accountId, path });
+          setFiles((prevFiles) =>
+            prevFiles.filter((f) => f.file.name !== file.name),
+          );
+        } catch (e) {
+          toast({
+            description: (
+              <p className="body-2 text-white">
+                Failed to upload <span className="font-semibold">{file.name}</span>
+              </p>
+            ),
+            className: "error-toast",
+          });
+          setFiles((prevFiles) =>
+            prevFiles.filter((f) => f.file.name !== file.name),
+          );
+        }
       });
 
       await Promise.all(uploadPromises);
@@ -67,7 +113,9 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
     fileName: string,
   ) => {
     e.stopPropagation();
-    setFiles((prevFiles) => prevFiles.filter((file) => file.name !== fileName));
+    setFiles((prevFiles) =>
+      prevFiles.filter((item) => item.file.name !== fileName),
+    );
   };
 
   return (
@@ -86,7 +134,7 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
         <ul className="uploader-preview-list">
           <h4 className="h4 text-light-100">Uploading</h4>
 
-          {files.map((file, index) => {
+          {files.map(({ file, progress }, index) => {
             const { type, extension } = getFileType(file.name);
 
             return (
@@ -103,12 +151,12 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
 
                   <div className="preview-item-name">
                     {file.name}
-                    <Image
-                      src="/assets/icons/file-loader.gif"
-                      width={80}
-                      height={26}
-                      alt="Loader"
-                    />
+                    <div className="mt-2 w-full rounded-full bg-light-300/60">
+                      <div
+                        className="h-2 rounded-full bg-brand"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
 
