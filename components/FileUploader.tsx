@@ -22,7 +22,7 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
   const path = usePathname();
   const router = useRouter();
   const { toast } = useToast();
-  const [files, setFiles] = useState<{ file: File; progress: number }[]>([]);
+  const [files, setFiles] = useState<Array<{ file: File; progress: number; total?: number }>>([]);
 
   const uploadWithProgress = (
     file: File,
@@ -37,18 +37,47 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
 
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "/api/upload");
+      
+      // Track upload start
+      xhr.upload.onloadstart = () => {
+        console.log(`Upload started: ${file.name}`);
+        setFiles((prev) =>
+          prev.map((it) =>
+            it.file.name === file.name ? { ...it, progress: 1 } : it,
+          ),
+        );
+      };
+      
+      // Track progress - works for all file types (images, videos, documents, etc.)
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 100);
+          const percent = Math.min(100, Math.max(0, (e.loaded / e.total) * 100));
+          console.log(`Upload progress ${file.name}: ${percent.toFixed(1)}% (${e.loaded}/${e.total})`);
           setFiles((prev) =>
             prev.map((it) =>
-              it.file.name === file.name ? { ...it, progress: percent } : it,
+              it.file.name === file.name
+                ? { ...it, progress: Number(percent.toFixed(1)), total: e.total }
+                : it,
             ),
           );
+        } else {
+          console.log(`Upload progress ${file.name}: length not computable`);
         }
       };
+      xhr.upload.onload = () => {
+        console.log(`Upload completed: ${file.name}`);
+        setFiles((prev) =>
+          prev.map((it) =>
+            it.file.name === file.name
+              ? { ...it, progress: 100 }
+              : it,
+          ),
+        );
+      };
+      
       xhr.onreadystatechange = () => {
         if (xhr.readyState === XMLHttpRequest.DONE) {
+          console.log(`Server response for ${file.name}: status ${xhr.status}`);
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
               const json = JSON.parse(xhr.responseText || "{}");
@@ -57,11 +86,15 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
               resolve(true);
             }
           } else {
-            reject(new Error("Upload failed"));
+            const body = (xhr.responseText || '').slice(0, 200);
+            console.error(`Upload failed for ${file.name}: ${xhr.status} ${body}`);
+            reject(new Error(`Upload failed (${xhr.status}) ${body}`));
           }
         }
       };
       xhr.onerror = () => reject(new Error("Network error"));
+      xhr.timeout = 5 * 60 * 1000; // 5 minutes
+      xhr.ontimeout = () => reject(new Error("Upload timed out"));
       xhr.send(form);
     });
   };
@@ -89,22 +122,28 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
 
         try {
           const uploaded: any = await uploadWithProgress(file, { ownerId, accountId, path });
+          
+          // Trigger refresh immediately (don't await)
+          router.refresh();
+          
+          // Pre-warm file URL in background
+          if (uploaded && uploaded.url) {
+            fetch(uploaded.url, { cache: "no-store" }).catch(() => {});
+          }
+          
+          // Keep progress at 100% briefly for visual confirmation, then remove
+          await new Promise(resolve => setTimeout(resolve, 300));
           setFiles((prevFiles) =>
             prevFiles.filter((f) => f.file.name !== file.name),
           );
-          // Pre-warm the file URL so it renders instantly after refresh
-          if (uploaded && uploaded.url) {
-            try {
-              await fetch(uploaded.url, { cache: "no-store" });
-            } catch {}
-          }
-          // Re-fetch server data so the new file shows instantly
-          router.refresh();
-        } catch (e) {
+        } catch (e: any) {
+          const message = String(e?.message || e || 'Upload failed');
+          const tooLarge = /413/.test(message);
           toast({
             description: (
               <p className="body-2 text-white">
                 Failed to upload <span className="font-semibold">{file.name}</span>
+                {tooLarge ? ' — request too large for server. Try smaller file or use direct upload.' : ''}
               </p>
             ),
             className: "error-toast",
@@ -165,11 +204,21 @@ const FileUploader = ({ ownerId, accountId, className }: Props) => {
 
                   <div className="preview-item-name">
                     {file.name}
-                    <div className="mt-2 w-full rounded-full bg-light-300/60">
+                    <div className="mt-2 w-full flex items-center gap-3">
                       <div
-                        className="h-2 rounded-full bg-brand"
-                        style={{ width: `${progress}%` }}
-                      />
+                        className="flex-1 rounded-full bg-light-300/60"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Number.isFinite(progress) ? Number(progress.toFixed(0)) : 0}
+                        aria-label={`Uploading ${file.name}`}
+                      >
+                        <div
+                          className="h-2 rounded-full bg-brand transition-all duration-300 ease-out"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-medium text-light-100 w-14 text-right">{Number.isFinite(progress) ? `${Math.round(progress)}%` : "0%"}</span>
                     </div>
                   </div>
                 </div>
