@@ -1,12 +1,22 @@
 import { NextRequest } from "next/server";
 import { ObjectId } from "mongodb";
 import { getBucket } from "@/lib/mongo/storage";
+import { getCollection } from "@/lib/mongo/client";
+import { getCurrentUser } from "@/lib/actions/user.actions";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const id = params?.id;
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   if (!id) return new Response("Bad Request", { status: 400 });
 
   try {
+    const col = await getCollection("files");
+    const doc = await col.findOne({ bucketFileId: id } as any);
+    const user = await getCurrentUser();
+    const email = user?.email;
+    const owner = (doc?.owner as any)?.toString?.();
+    const userCan = !!doc?.isPublic || (!!user && (owner === user?.$id || (doc?.users || []).includes(email)));
+    if (!userCan) return new Response("Forbidden", { status: 403 });
+
     const bucket = await getBucket();
     const _id = new ObjectId(id);
 

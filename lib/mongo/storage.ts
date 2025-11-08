@@ -71,3 +71,41 @@ export const deleteFromGridFS = async (id: string) => {
   const bucket = await getBucket();
   await bucket.delete(new ObjectId(id));
 };
+
+export const getGridFileInfo = async (id: string) => {
+  const bucket = await getBucket();
+  const cursor = bucket.find({ _id: new ObjectId(id) } as any);
+  const files = await cursor.toArray();
+  const f = files?.[0] as any;
+  if (!f) return null;
+  return {
+    filename: f.filename as string,
+    length: f.length as number,
+    uploadDate: f.uploadDate as Date,
+    contentType: f.metadata?.contentType as string | undefined,
+  };
+};
+
+export const openDownloadStream = async (id: string) => {
+  const bucket = await getBucket();
+  return bucket.openDownloadStream(new ObjectId(id));
+};
+
+export const readHeadFromGridFS = async (id: string, maxBytes: number): Promise<Buffer> => {
+  const bucket = await getBucket();
+  const stream = bucket.openDownloadStream(new ObjectId(id), { start: 0, end: Math.max(0, maxBytes - 1) } as any);
+  return await new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    stream.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+      total += chunk.length;
+      if (total >= maxBytes) {
+        stream.destroy();
+      }
+    });
+    stream.on('end', () => resolve(Buffer.concat(chunks).subarray(0, maxBytes)));
+    stream.on('close', () => resolve(Buffer.concat(chunks).subarray(0, maxBytes)));
+    stream.on('error', reject);
+  });
+};

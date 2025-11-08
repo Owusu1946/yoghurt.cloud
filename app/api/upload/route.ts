@@ -4,6 +4,7 @@ import { getCollection } from "@/lib/mongo/client";
 import { uploadWebStreamToGridFS } from "@/lib/mongo/storage";
 import { getFileType } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
+import { generateTagsForFile } from "@/lib/ai/gemini";
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 minutes for large uploads
@@ -51,6 +52,8 @@ export async function POST(req: NextRequest) {
       owner: new ObjectId(ownerId),
       accountId,
       users: [] as string[],
+      isPublic: false,
+      tags: [] as string[],
       bucketFileId: gridId,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -62,6 +65,36 @@ export async function POST(req: NextRequest) {
     try {
       revalidatePath(path);
     } catch {}
+
+    // Fire-and-forget: generate tags with Gemini and update the document
+    console.log('Upload API: Starting background tagging for', file.name);
+    ;(async () => {
+      try {
+        console.log('Gemini: Checking API key...');
+        if (!process.env.GOOGLE_API_KEY && !process.env.GEMINI_API_KEY) {
+          console.log('Gemini tagging skipped: missing GOOGLE_API_KEY/GEMINI_API_KEY');
+          return;
+        }
+        console.log('Gemini: API key found, calling generateTagsForFile...');
+        const tags = await generateTagsForFile({
+          name: file.name,
+          type,
+          extension,
+          contentType: (file as any).type,
+          size: file.size,
+        });
+        console.log('Gemini: Received tags', { tags, isArray: Array.isArray(tags), length: tags?.length });
+        if (Array.isArray(tags) && tags.length) {
+          await col.updateOne({ _id: result.insertedId }, { $set: { tags, updatedAt: new Date() } });
+          console.log('Gemini tagging success', { fileId: result.insertedId.toString(), name: file.name, tags });
+          try { revalidatePath(path); } catch {}
+        } else {
+          console.log('Gemini: No tags returned or empty array');
+        }
+      } catch (err) {
+        console.log('Gemini tagging failed', err);
+      }
+    })();
 
     return new Response(
       JSON.stringify({

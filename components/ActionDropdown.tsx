@@ -27,6 +27,8 @@ import {
   deleteFile,
   renameFile,
   updateFileUsers,
+  updateFileAccess,
+  retagFile,
 } from "@/lib/actions/file.actions";
 import { usePathname } from "next/navigation";
 import { FileDetails, ShareInput } from "@/components/ActionsModalContent";
@@ -37,7 +39,8 @@ const ActionDropdown = ({ file }: { file: Models.Document }) => {
   const [action, setAction] = useState<ActionType | null>(null);
   const [name, setName] = useState(file.name);
   const [isLoading, setIsLoading] = useState(false);
-  const [emails, setEmails] = useState<string[]>([]);
+  const [emails, setEmails] = useState<string[]>(file.users || []);
+  const [isPublic, setIsPublic] = useState<boolean>(!!(file as any).isPublic);
 
   const path = usePathname();
 
@@ -57,7 +60,8 @@ const ActionDropdown = ({ file }: { file: Models.Document }) => {
     const actions = {
       rename: () =>
         renameFile({ fileId: file.$id, name, extension: file.extension, path }),
-      share: () => updateFileUsers({ fileId: file.$id, emails, path }),
+      share: () => updateFileAccess({ fileId: file.$id, emails, isPublic, path }),
+      retag: () => retagFile({ fileId: file.$id, path }),
       delete: () =>
         deleteFile({ fileId: file.$id, bucketFileId: file.bucketFileId, path }),
     };
@@ -104,8 +108,14 @@ const ActionDropdown = ({ file }: { file: Models.Document }) => {
           {value === "share" && (
             <ShareInput
               file={file}
-              onInputChange={setEmails}
+              isPublic={isPublic}
+              selectedEmails={emails}
+              onTogglePublic={setIsPublic}
+              onAddEmail={(email) => {
+                if (!emails.includes(email)) setEmails((prev) => [...prev, email]);
+              }}
               onRemove={handleRemoveUser}
+              publicLink={(typeof window !== 'undefined') ? `${window.location.origin}${file.url}` : file.url}
             />
           )}
           {value === "delete" && (
@@ -167,6 +177,10 @@ const ActionDropdown = ({ file }: { file: Models.Document }) => {
                   )
                 ) {
                   setIsModalOpen(true);
+                } else if (actionItem.value === 'retag') {
+                  // Fire retag immediately without modal
+                  setIsLoading(true);
+                  retagFile({ fileId: file.$id, path }).finally(() => setIsLoading(false));
                 }
               }}
             >

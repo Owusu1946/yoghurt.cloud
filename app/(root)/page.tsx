@@ -87,6 +87,15 @@ const Dashboard = async () => {
                       className="caption"
                     />
                   </div>
+                  {Array.isArray((file as any).tags) && (file as any).tags.length > 0 && (
+                    <ul className="mt-1 flex flex-wrap gap-1">
+                      {(file as any).tags.slice(0, 5).map((tag: string) => (
+                        <li key={tag} className="rounded bg-dark-400 px-2 py-[2px] caption text-light-200">
+                          {tag}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   <ActionDropdown file={file} />
                 </div>
               </Link>

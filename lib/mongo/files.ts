@@ -11,6 +11,8 @@ export interface FileDoc {
   owner: ObjectId; // user _id
   accountId: string; // for UI compatibility
   users: string[]; // shared with emails
+  isPublic?: boolean; // whether the file is accessible by anyone with the link
+  tags?: string[]; // AI generated tags
   bucketFileId?: string; // compatibility (not used in Mongo path)
   createdAt: Date;
   updatedAt: Date;

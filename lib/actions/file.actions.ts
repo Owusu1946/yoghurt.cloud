@@ -14,10 +14,95 @@ import {
 import { getCollection } from "@/lib/mongo/client";
 import { ObjectId } from "mongodb";
 import { uploadToGridFS, deleteFromGridFS } from "@/lib/mongo/storage";
+import { readHeadFromGridFS } from "@/lib/mongo/storage";
+import { generateTagsForFile } from "@/lib/ai/gemini";
 
 const handleError = (error: unknown, message: string) => {
   console.log(error, message);
   throw error;
+};
+
+export const retagFile = async ({ fileId, path }: { fileId: string; path: string }) => {
+  if (!appwriteEnabled()) {
+    try {
+      const col = await getCollection("files");
+      const doc = await col.findOne({ _id: new ObjectId(fileId) } as any);
+      if (!doc) return parseStringify({ status: "not_found" });
+      const bucketId = (doc as any).bucketFileId as string | undefined;
+      const name = (doc as any).name as string;
+      const { type, extension } = getFileType(name);
+      let previewText = "";
+      let imageBase64: string | undefined;
+      if (bucketId) {
+        try {
+          const head = await readHeadFromGridFS(bucketId, 300_000);
+          const contentType = (doc as any)?.contentType || undefined;
+          const isTextLike = /^(text\/|application\/(json|xml|javascript|typescript))/.test(contentType || "") || ["txt", "md", "csv", "log"].includes(extension);
+          const isImage = /^image\//.test(contentType || "") || ["png","jpg","jpeg","gif","webp"].includes(extension);
+          if (isTextLike) {
+            previewText = head.toString("utf8");
+          } else if (isImage) {
+            imageBase64 = head.toString("base64");
+          }
+        } catch {}
+      }
+      const tags = await generateTagsForFile({
+        name,
+        type,
+        extension,
+        contentType: (doc as any)?.contentType,
+        size: (doc as any)?.size,
+        previewText,
+        imageBase64,
+      });
+      await col.updateOne({ _id: new ObjectId(fileId) }, { $set: { tags, updatedAt: new Date() } });
+      revalidatePath(path);
+      return parseStringify({ status: "success", tags });
+    } catch (e) {
+      handleError(e, "Failed to retag file");
+    }
+  }
+  // Appwrite path not implemented
+  return parseStringify({ status: "noop" });
+};
+
+export const updateFileAccess = async ({
+  fileId,
+  emails,
+  isPublic,
+  path,
+}: { fileId: string; emails: string[]; isPublic: boolean; path: string }) => {
+  if (!appwriteEnabled()) {
+    try {
+      const col = await getCollection("files");
+      await col.updateOne(
+        { _id: new ObjectId(fileId) },
+        { $set: { users: emails, isPublic, updatedAt: new Date() } },
+      );
+      revalidatePath(path);
+      return parseStringify({ status: "success" });
+    } catch (e) {
+      handleError(e, "Failed to update file access");
+    }
+  }
+  const { databases } = await createAdminClient();
+
+  try {
+    const updatedFile = await databases.updateDocument(
+      appwriteConfig.databaseId,
+      appwriteConfig.filesCollectionId,
+      fileId,
+      {
+        users: emails,
+        isPublic,
+      },
+    );
+
+    revalidatePath(path);
+    return parseStringify(updatedFile);
+  } catch (error) {
+    handleError(error, "Failed to update file access");
+  }
 };
 
 // Explicit opt-in flag for Appwrite paths; defaults to Mongo when unset
@@ -167,6 +252,8 @@ export const getFiles = async ({
         owner: { fullName: currentUser.fullName },
         accountId: d.accountId || currentUser.accountId,
         users: d.users || [],
+        isPublic: !!d.isPublic,
+        tags: d.tags || [],
         bucketFileId: d.bucketFileId,
       }));
 

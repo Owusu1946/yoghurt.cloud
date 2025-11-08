@@ -48,6 +48,11 @@ export const actionsDropdownItems = [
     value: "download",
   },
   {
+    label: "Retag",
+    icon: "/assets/icons/download.svg",
+    value: "retag",
+  },
+  {
     label: "Delete",
     icon: "/assets/icons/delete.svg",
     value: "delete",
